@@ -1,0 +1,14 @@
+# Django
+Django>=5.0
+
+# Celery & Redis
+celery[redis]>=5.3
+redis>=5.0
+
+# Google Drive API
+google-api-python-client>=2.100
+google-auth>=2.22
+
+# Environment & HTTP
+python-dotenv>=1.0
+requests>=2.31

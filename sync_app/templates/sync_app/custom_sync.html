@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Sync — Drive to ACR</title>
+    <style>
+        :root {
+            --bg: #0f1419;
+            --surface: #1a2332;
+            --border: #2d3a4d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --accent-hover: #79b8ff;
+            --success: #3fb950;
+            --error: #f85149;
+            --radius: 12px;
+            --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            line-height: 1.5;
+        }
+        .container {
+            width: 100%;
+            max-width: 440px;
+        }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 32px;
+            box-shadow: var(--shadow);
+        }
+        h1 {
+            margin: 0 0 8px;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 28px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: var(--text);
+        }
+        .helptext {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+        .form-input {
+            width: 100%;
+            padding: 12px 14px;
+            font-size: 1rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            transition: border-color 0.15s ease;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+        }
+        .form-input::placeholder {
+            color: var(--text-muted);
+        }
+        /* Whole date input opens calendar; white calendar icon */
+        .date-input-wrap {
+            cursor: pointer;
+            display: block;
+        }
+        .date-input-wrap .form-input {
+            cursor: pointer;
+        }
+        .date-input-wrap .form-input::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+            opacity: 0.85;
+            cursor: pointer;
+        }
+        .date-input-wrap .form-input::-webkit-date-and-time-value {
+            color: var(--text);
+        }
+        .btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        /* Loading overlay */
+        .sync-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 20, 25, 0.92);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 24px;
+            padding: 24px;
+        }
+        .sync-overlay.is-visible {
+            display: flex;
+        }
+        .sync-spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .sync-status {
+            color: var(--text);
+            font-size: 1rem;
+            text-align: center;
+            max-width: 320px;
+        }
+        .sync-status strong {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 1.1rem;
+        }
+        .errorlist {
+            list-style: none;
+            padding: 0;
+            margin: 6px 0 0;
+            font-size: 0.85rem;
+            color: var(--error);
+        }
+        .btn {
+            width: 100%;
+            padding: 14px 20px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+            background: var(--accent);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s ease;
+            margin-top: 8px;
+        }
+        .btn:hover {
+            background: var(--accent-hover);
+        }
+        .btn:active {
+            transform: scale(0.99);
+        }
+        .messages {
+            width: 100%;
+            max-width: 440px;
+            margin-bottom: 20px;
+        }
+        .message {
+            padding: 14px 18px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            border: 1px solid transparent;
+        }
+        .message.success {
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--success);
+            border-color: rgba(63, 185, 80, 0.3);
+        }
+        .message.error {
+            background: rgba(248, 81, 73, 0.15);
+            color: var(--error);
+            border-color: rgba(248, 81, 73, 0.3);
+        }
+        .message.warning {
+            background: rgba(210, 153, 34, 0.15);
+            color: #d29922;
+            border-color: rgba(210, 153, 34, 0.3);
+        }
+        .message.info {
+            background: rgba(88, 166, 255, 0.1);
+            color: var(--accent);
+            border-color: rgba(88, 166, 255, 0.25);
+        }
+        .footer {
+            margin-top: 24px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="messages">
+        {% for message in messages %}
+            <div class="message {{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    <div class="container">
+        <div class="card">
+            <h1>Custom Sync</h1>
+            <p class="subtitle">Sync Google Drive files to ACR Cloud by date range</p>
+            <form method="post" action="{% url 'sync_app:custom_sync' %}" novalidate id="sync-form">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label for="id_from_date">{{ form.from_date.label }}</label>
+                    <label class="date-input-wrap" for="id_from_date" id="wrap-from-date">
+                        {{ form.from_date }}
+                    </label>
+                    {% if form.from_date.help_text %}<span class="helptext">{{ form.from_date.help_text }}</span>{% endif %}
+                    {{ form.from_date.errors }}
+                </div>
+                <div class="form-group">
+                    <label for="id_to_date">{{ form.to_date.label }}</label>
+                    <label class="date-input-wrap" for="id_to_date" id="wrap-to-date">
+                        {{ form.to_date }}
+                    </label>
+                    {% if form.to_date.help_text %}<span class="helptext">{{ form.to_date.help_text }}</span>{% endif %}
+                    {{ form.to_date.errors }}
+                </div>
+                <div class="form-group">
+                    <label for="id_bucket_id">{{ form.bucket_id.label }}</label>
+                    {{ form.bucket_id }}
+                    {% if form.bucket_id.help_text %}<span class="helptext">{{ form.bucket_id.help_text }}</span>{% endif %}
+                    {{ form.bucket_id.errors }}
+                </div>
+                {% if form.non_field_errors %}
+                    <ul class="errorlist">{{ form.non_field_errors }}</ul>
+                {% endif %}
+                <button type="submit" class="btn" id="submit-btn">Run sync</button>
+            </form>
+        </div>
+        <p class="footer">
+            <a href="{% url 'admin:index' %}">Admin</a>
+            &nbsp;·&nbsp;
+            Syncs only files whose <strong>modified date</strong> falls between From and To.
+        </p>
+    </div>
+
+    <div class="sync-overlay" id="sync-overlay" aria-live="polite">
+        <div class="sync-spinner" aria-hidden="true"></div>
+        <div class="sync-status">
+            <strong>Syncing…</strong>
+            Connecting to Drive, downloading files, and uploading to ACR. This may take a few minutes. Please don’t close this page.
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            var form = document.getElementById('sync-form');
+            var overlay = document.getElementById('sync-overlay');
+            var submitBtn = document.getElementById('submit-btn');
+            if (!form || !overlay) return;
+
+            form.addEventListener('submit', function(e) {
+                if (submitBtn.disabled) return;
+                submitBtn.disabled = true;
+                overlay.classList.add('is-visible');
+            });
+
+            var fromWrap = document.getElementById('wrap-from-date');
+            var toWrap = document.getElementById('wrap-to-date');
+            function openDatePicker(inputId) {
+                var input = document.getElementById(inputId);
+                if (input && typeof input.showPicker === 'function') {
+                    input.showPicker();
+                } else if (input) {
+                    input.focus();
+                }
+            }
+            if (fromWrap) fromWrap.addEventListener('click', function(e) { openDatePicker('id_from_date'); });
+            if (toWrap) toWrap.addEventListener('click', function(e) { openDatePicker('id_to_date'); });
+            var fromInput = document.getElementById('id_from_date');
+            var toInput = document.getElementById('id_to_date');
+            if (fromInput) fromInput.addEventListener('click', function() { if (this.showPicker) this.showPicker(); });
+            if (toInput) toInput.addEventListener('click', function() { if (this.showPicker) this.showPicker(); });
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment Variables (CRITICAL)
+.env
+
+# Google Cloud Service Account Keys (CRITICAL)
+*.json
+
+# Local Database
+db.sqlite3
+
+# Media and Downloads
+# This ensures the temporary files downloaded from Drive aren't committed
+downloads/
+media/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Celery
+celerybeat-schedule
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Documentation & Project specific
+VERIFICATION.md
+acr_sync_key.pem
+
+# Celery local database files
+celerybeat-schedule.bak
+celerybeat-schedule.dat
+celerybeat-schedule.dir
