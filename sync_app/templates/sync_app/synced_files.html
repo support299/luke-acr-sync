@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synced Files — ACR Sync</title>
+    <style>
+        :root {
+            --bg: #0f1419;
+            --surface: #1a2332;
+            --surface-hover: #212d3d;
+            --border: #2d3a4d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --accent-hover: #79b8ff;
+            --success: #3fb950;
+            --radius: 12px;
+            --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            min-height: 100vh;
+            padding: 24px;
+            line-height: 1.5;
+        }
+        .page-header {
+            max-width: 900px;
+            margin: 0 auto 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .page-title { margin: 0; font-size: 1.5rem; font-weight: 600; }
+        .nav-links {
+            display: flex;
+            gap: 16px;
+            font-size: 0.9rem;
+        }
+        .nav-links a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .nav-links a:hover { text-decoration: underline; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+        .card-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+        }
+        .card-header h2 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+        .card-header .count {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-top: 4px;
+        }
+        .table-wrap { overflow-x: auto; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        th, td {
+            padding: 14px 24px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: var(--surface-hover); }
+        .file-name {
+            font-weight: 500;
+            color: var(--text);
+            max-width: 280px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .drive-id {
+            font-family: ui-monospace, monospace;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .synced-at {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            white-space: nowrap;
+        }
+        .duration {
+            font-variant-numeric: tabular-nums;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .status-badge.success {
+            background: rgba(63, 185, 80, 0.2);
+            color: var(--success);
+        }
+        .status-badge.unknown {
+            background: rgba(139, 148, 158, 0.2);
+            color: var(--text-muted);
+        }
+        .empty-state {
+            padding: 48px 24px;
+            text-align: center;
+            color: var(--text-muted);
+        }
+        .empty-state p { margin: 0 0 8px; }
+        .empty-state a { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <div class="page-header">
+        <h1 class="page-title">Synced Files</h1>
+        <nav class="nav-links">
+            <a href="{% url 'sync_app:custom_sync' %}">Sync</a>
+            <a href="{% url 'logout' %}">Log out</a>
+            <a href="{% url 'admin:index' %}">Admin</a>
+        </nav>
+    </div>
+    <div class="container">
+        <div class="card">
+            <div class="card-header">
+                <h2>All synced files</h2>
+                <p class="count">{{ files|length }} file{{ files|length|pluralize }} synced to ACR Cloud</p>
+            </div>
+            {% if files %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>File name</th>
+                            <th>Drive ID</th>
+                            <th>Duration</th>
+                            <th>Synced at</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in files %}
+                        <tr>
+                            <td><span class="file-name" title="{{ f.file_name }}">{{ f.file_name }}</span></td>
+                            <td><span class="drive-id" title="{{ f.drive_file_id }}">{{ f.drive_file_id }}</span></td>
+                            <td class="duration">{{ f.duration_display|default:"—" }}</td>
+                            <td class="synced-at">{{ f.synced_at|date:"M d, Y" }} {{ f.synced_at|time:"H:i" }}</td>
+                            <td>
+                                <span class="status-badge {% if f.acr_status %}success{% else %}unknown{% endif %}">
+                                    {{ f.acr_status|default:"—" }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p>No files synced yet.</p>
+                <p><a href="{% url 'sync_app:custom_sync' %}">Run a sync</a> to upload files from Google Drive to ACR Cloud.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

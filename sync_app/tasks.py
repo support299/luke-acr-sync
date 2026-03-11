@@ -96,7 +96,7 @@ def _upload_file_to_acr(file_path: str, file_name: str, drive_file_id: str, buck
         import requests
     except ImportError:
         logger.error("requests library is required for ACR upload. pip install requests")
-        return False, "requests not installed"
+        return False, "requests not installed", ""
 
     bearer_token = os.environ.get("ACR_BEARER_TOKEN", "").strip()
     bucket_id = (bucket_id_override or "").strip() or os.environ.get("ACR_BUCKET_ID", "").strip()
@@ -126,8 +126,14 @@ def _upload_file_to_acr_v2(file_path: str, file_name: str, bearer_token: str, bu
             timeout=120,
         )
     if response.status_code in (200, 201):
-        return True, "success"
-    return False, f"HTTP {response.status_code}: {response.text[:200]}"
+        duration = ""
+        try:
+            data = response.json()
+            duration = str(data.get("data", {}).get("duration", ""))
+        except Exception:
+            pass
+        return True, "success", duration
+    return False, f"HTTP {response.status_code}: {response.text[:200]}", ""
 
 
 def _upload_file_to_acr_v1(file_path: str, file_name: str, drive_file_id: str, requests_module):
@@ -135,7 +141,7 @@ def _upload_file_to_acr_v1(file_path: str, file_name: str, drive_file_id: str, r
     host, access_key, access_secret = _get_acr_credentials()
     bucket_name = os.environ.get("ACR_BUCKET_NAME", "").strip()
     if not bucket_name:
-        return False, "For v1 uploads set ACR_BUCKET_NAME. For Console API v2 set ACR_BEARER_TOKEN and ACR_BUCKET_ID."
+        return False, "For v1 uploads set ACR_BUCKET_NAME. For Console API v2 set ACR_BEARER_TOKEN and ACR_BUCKET_ID.", ""
 
     upload_host = os.environ.get("ACR_UPLOAD_HOST", "").strip() or None
     if not upload_host and "identify" in host.lower():
@@ -168,8 +174,8 @@ def _upload_file_to_acr_v1(file_path: str, file_name: str, drive_file_id: str, r
             timeout=120,
         )
     if response.status_code in (200, 201):
-        return True, "success"
-    return False, f"HTTP {response.status_code}: {response.text[:200]}"
+        return True, "success", ""
+    return False, f"HTTP {response.status_code}: {response.text[:200]}", ""
 
 
 def _date_to_drive_rfc3339(date_val, end_of_day=False):
@@ -278,7 +284,7 @@ def run_sync_drive_to_acr(from_date=None, to_date=None, bucket_id_override=None)
 
     for drive_file_id, file_name, local_path in downloaded:
         logger.info("Uploading to ACR: %s", file_name)
-        success, acr_status = _upload_file_to_acr(
+        success, acr_status, acr_duration = _upload_file_to_acr(
             local_path, file_name, drive_file_id, bucket_id_override=bucket_id_override
         )
 
@@ -293,6 +299,7 @@ def run_sync_drive_to_acr(from_date=None, to_date=None, bucket_id_override=None)
                 drive_file_id=drive_file_id,
                 file_name=file_name,
                 acr_status=acr_status,
+                acr_duration=acr_duration or "",
             )
             acr_success += 1
             logger.info("Synced successfully: %s (Drive ID: %s) -> ACR, record saved.", file_name, drive_file_id)

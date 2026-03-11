@@ -5,11 +5,14 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
+from datetime import timedelta
+
 from django.shortcuts import render, redirect
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from .forms import CustomSyncForm
+from .models import SyncedFile
 from .tasks import run_sync_drive_to_acr
 
 
@@ -64,7 +67,9 @@ def custom_sync(request):
     On POST, runs sync with date filter and optional bucket override, then redirects with result message.
     """
     if request.method == "GET":
-        form = CustomSyncForm(initial={"to_date": timezone.localdate()})
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+        form = CustomSyncForm(initial={"from_date": yesterday, "to_date": today})
         return render(request, "sync_app/custom_sync.html", {"form": form})
 
     form = CustomSyncForm(request.POST)
@@ -109,3 +114,27 @@ def custom_sync(request):
             messages.success(request, msg)
 
     return redirect("sync_app:custom_sync")
+
+
+def _format_duration(secs_str):
+    """Format duration string (e.g. '312.485') as '5m 12s' or '45s'."""
+    if not secs_str:
+        return None
+    try:
+        total = float(secs_str)
+        mins = int(total // 60)
+        secs = total % 60
+        if mins > 0:
+            return f"{mins}m {secs:.1f}s"
+        return f"{secs:.1f}s"
+    except (ValueError, TypeError):
+        return secs_str
+
+
+@login_required
+def synced_files_list(request):
+    """Display all synced files with file name, duration, synced date/time, etc."""
+    files = SyncedFile.objects.all().order_by("-synced_at")
+    for f in files:
+        f.duration_display = _format_duration(f.acr_duration)
+    return render(request, "sync_app/synced_files.html", {"files": files})

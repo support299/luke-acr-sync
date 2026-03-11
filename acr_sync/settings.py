@@ -158,6 +158,7 @@ CELERY_BEAT_SCHEDULE = {
         "task": "sync_app.tasks.sync_drive_to_acr",
         "schedule": crontab(minute=0, hour="*/10"),  # 00:00, 10:00, 20:00 UTC
         "options": {"queue": "default"},
+        "kwargs": {"from_date": "2026-03-05"},  # Only sync files modified on or after this date
     },
 }
 

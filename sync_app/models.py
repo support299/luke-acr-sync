@@ -19,6 +19,8 @@ class SyncedFile(models.Model):
     synced_at = models.DateTimeField(auto_now_add=True)
     # Status from ACR Cloud (e.g. "success", "pending", error code) for debugging
     acr_status = models.CharField(max_length=64, default="")
+    # Duration in seconds from ACR (when available)
+    acr_duration = models.CharField(max_length=32, blank=True, default="")
 
     class Meta:
         ordering = ["-synced_at"]
