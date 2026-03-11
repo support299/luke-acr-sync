@@ -2,6 +2,9 @@
 Views for sync_app: custom sync UI with date range and bucket ID.
 """
 from django.contrib import messages
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import UserCreationForm
 from django.shortcuts import render, redirect
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
@@ -10,6 +13,50 @@ from .forms import CustomSyncForm
 from .tasks import run_sync_drive_to_acr
 
 
+@require_http_methods(["GET", "POST"])
+def login_view(request):
+    """Function-based login view to avoid 405 issues."""
+    if request.user.is_authenticated:
+        return redirect("sync_app:custom_sync")
+    if request.method == "GET":
+        return render(request, "sync_app/login.html", {"form": None, "next": request.GET.get("next", "")})
+    from django.contrib.auth.forms import AuthenticationForm
+    form = AuthenticationForm(request, data=request.POST)
+    if form.is_valid():
+        user = form.get_user()
+        login(request, user)
+        next_url = request.POST.get("next", "").strip()
+        if next_url and next_url.startswith("/"):
+            return redirect(next_url)
+        return redirect("sync_app:custom_sync")
+    return render(request, "sync_app/login.html", {"form": form, "next": request.POST.get("next", "")})
+
+
+@require_http_methods(["GET", "POST"])
+def register_view(request):
+    """User registration view."""
+    if request.user.is_authenticated:
+        return redirect("sync_app:custom_sync")
+    if request.method == "GET":
+        form = UserCreationForm()
+        return render(request, "sync_app/register.html", {"form": form})
+    form = UserCreationForm(request.POST)
+    if form.is_valid():
+        user = form.save()
+        login(request, user)
+        messages.success(request, "Account created successfully. Welcome!")
+        return redirect("sync_app:custom_sync")
+    return render(request, "sync_app/register.html", {"form": form})
+
+
+@require_http_methods(["GET", "POST"])
+def logout_view(request):
+    """Logout view that accepts GET (for link clicks) and POST."""
+    logout(request)
+    return redirect("login")
+
+
+@login_required
 @require_http_methods(["GET", "POST"])
 def custom_sync(request):
     """

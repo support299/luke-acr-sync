@@ -17,8 +17,15 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path, include
+from django.views.generic import RedirectView
+
+from sync_app.views import login_view, logout_view, register_view
 
 urlpatterns = [
+    path("", RedirectView.as_view(url="/sync/", permanent=False)),
     path("admin/", admin.site.urls),
+    path("accounts/login/", login_view, name="login"),
+    path("accounts/register/", register_view, name="register"),
+    path("accounts/logout/", logout_view, name="logout"),
     path("sync/", include("sync_app.urls")),
 ]
