@@ -231,18 +231,34 @@ def run_sync_drive_to_acr(from_date=None, to_date=None, bucket_id_override=None)
         to_rfc = _date_to_drive_rfc3339(to_date, end_of_day=True)
         query += f" and modifiedTime <= '{to_rfc}'"
 
-    fields = "files(id, name, modifiedTime)" if (from_date or to_date) else "files(id, name)"
+    list_fields = (
+        "nextPageToken, files(id, name, modifiedTime)"
+        if (from_date or to_date)
+        else "nextPageToken, files(id, name)"
+    )
+    files_in_folder = []
+    page_token = None
     try:
-        results = (
-            drive.files()
-            .list(q=query, fields=fields, pageSize=100, supportsAllDrives=True)
-            .execute()
-        )
+        while True:
+            results = (
+                drive.files()
+                .list(
+                    q=query,
+                    fields=list_fields,
+                    pageSize=100,
+                    pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                )
+                .execute()
+            )
+            files_in_folder.extend(results.get("files", []))
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                break
     except Exception as e:
         logger.exception("Drive list failed: %s", e)
         return _default_summary(e)
-
-    files_in_folder = results.get("files", [])
     to_process = [f for f in files_in_folder if f["id"] not in existing_ids]
 
     if not to_process:
