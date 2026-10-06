@@ -5,6 +5,7 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
+from django.core.paginator import Paginator
 from datetime import timedelta
 
 from django.shortcuts import render, redirect
@@ -138,8 +139,17 @@ def _format_duration(secs_str):
 
 @login_required
 def synced_files_list(request):
-    """Display all synced files with file name, duration, synced date/time, etc."""
-    files = SyncedFile.objects.all().order_by("-synced_at")
-    for f in files:
+    """Display synced files, 50 per page, newest first."""
+    paginator = Paginator(SyncedFile.objects.all().order_by("-synced_at"), 50)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    for f in page_obj:
         f.duration_display = _format_duration(f.acr_duration)
-    return render(request, "sync_app/synced_files.html", {"files": files})
+    return render(
+        request,
+        "sync_app/synced_files.html",
+        {
+            "files": page_obj,
+            "page_obj": page_obj,
+            "page_numbers": list(paginator.get_elided_page_range(page_obj.number)),
+        },
+    )

@@ -132,6 +132,36 @@
         }
         .empty-state p { margin: 0 0 8px; }
         .empty-state a { color: var(--accent); }
+        .pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 16px 24px 20px;
+            border-top: 1px solid var(--border);
+        }
+        .pagination a, .pagination span {
+            display: inline-block;
+            min-width: 36px;
+            padding: 6px 10px;
+            border-radius: 8px;
+            text-align: center;
+            text-decoration: none;
+            color: var(--text);
+            font-size: 0.85rem;
+        }
+        .pagination a {
+            border: 1px solid var(--border);
+            color: var(--accent);
+        }
+        .pagination a:hover { background: var(--surface-hover); }
+        .pagination .current {
+            background: var(--accent);
+            color: #0f1419;
+            font-weight: 600;
+        }
+        .pagination .ellipsis { color: var(--text-muted); }
     </style>
 </head>
 <body>
@@ -147,7 +177,11 @@
         <div class="card">
             <div class="card-header">
                 <h2>All synced files</h2>
-                <p class="count">{{ files|length }} file{{ files|length|pluralize }} synced to ACR Cloud</p>
+                {% if page_obj.paginator.count %}
+                <p class="count">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }} file{{ page_obj.paginator.count|pluralize }}</p>
+                {% else %}
+                <p class="count">0 files synced to ACR Cloud</p>
+                {% endif %}
             </div>
             {% if files %}
             <div class="table-wrap">
@@ -180,6 +214,25 @@
                     </tbody>
                 </table>
             </div>
+            {% if page_obj.paginator.num_pages > 1 %}
+            <nav class="pagination" aria-label="Synced files pages">
+                {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                {% endif %}
+                {% for num in page_numbers %}
+                    {% if num == "…" %}
+                    <span class="ellipsis">…</span>
+                    {% elif num == page_obj.number %}
+                    <span class="current" aria-current="page">{{ num }}</span>
+                    {% else %}
+                    <a href="?page={{ num }}">{{ num }}</a>
+                    {% endif %}
+                {% endfor %}
+                {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}">Next</a>
+                {% endif %}
+            </nav>
+            {% endif %}
             {% else %}
             <div class="empty-state">
                 <p>No files synced yet.</p>
