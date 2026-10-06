@@ -24,8 +24,8 @@ class CustomSyncForm(forms.Form):
         required=False,
         max_length=32,
         label="ACR Bucket ID",
-        help_text="Default bucket is from .env (ACR_BUCKET_ID). Enter a bucket ID here only if you want to use a different bucket for this sync.",
-        widget=forms.TextInput(attrs={"class": "form-input", "placeholder": "Leave blank to use default from .env"}),
+        help_text="Leave blank to sync every bucket in ACR_BUCKETS. Enter one bucket ID to sync only that bucket.",
+        widget=forms.TextInput(attrs={"class": "form-input", "placeholder": "Leave blank to sync all configured buckets"}),
     )
 
     def clean(self):

@@ -11,8 +11,11 @@ class SyncedFile(models.Model):
     drive_file_id is unique so we never process the same file twice.
     """
 
-    # Google Drive file ID (unique per file in the folder)
-    drive_file_id = models.CharField(max_length=255, unique=True, db_index=True)
+    # Google Drive file ID. Unique together with bucket_id so the same file
+    # can be uploaded to more than one ACR bucket.
+    drive_file_id = models.CharField(max_length=255, db_index=True)
+    # ACR Console bucket this copy was uploaded to
+    bucket_id = models.CharField(max_length=32, db_index=True, default="")
     # Original file name from Drive
     file_name = models.CharField(max_length=512)
     # When we successfully synced to ACR and created this record
@@ -26,6 +29,13 @@ class SyncedFile(models.Model):
         ordering = ["-synced_at"]
         verbose_name = "Synced file"
         verbose_name_plural = "Synced files"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["drive_file_id", "bucket_id"],
+                name="uniq_drive_file_bucket",
+            ),
+        ]
 
     def __str__(self):
-        return f"{self.file_name} ({self.drive_file_id})"
+        bucket = self.bucket_id or "?"
+        return f"{self.file_name} ({self.drive_file_id}) -> {bucket}"

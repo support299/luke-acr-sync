@@ -101,7 +101,12 @@ def custom_sync(request):
         if summary.get("acr_success", 0) > 0:
             messages.success(
                 request,
-                f"{msg} {summary['acr_success']} file(s) synced successfully to ACR.",
+                f"{msg} {summary['acr_success']} file(s) synced successfully to ACR"
+                + (
+                    f" bucket(s) {', '.join(summary['bucket_ids'])}."
+                    if summary.get("bucket_ids")
+                    else "."
+                ),
             )
         elif summary.get("acr_failed", 0) > 0:
             messages.warning(

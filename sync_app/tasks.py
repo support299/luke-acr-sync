@@ -87,10 +87,53 @@ def _build_acr_signature(access_key: str, access_secret: str, timestamp: str) ->
     return base64.b64encode(signature_bytes).decode("utf-8")
 
 
-def _upload_file_to_acr(file_path: str, file_name: str, drive_file_id: str, bucket_id_override: str = None):
+def _bucket_targets(bucket_id_override=None):
     """
-    Upload a single file to ACR Cloud.
-    bucket_id_override: if set, use this bucket ID for v2 upload instead of ACR_BUCKET_ID from env.
+    Buckets to upload to, each with its own bearer token.
+
+    ACR_BUCKETS is a comma-separated list of bucket IDs (falls back to ACR_BUCKET_ID).
+    Token lookup: ACR_BEARER_TOKEN_<bucket_id> if that variable is set, otherwise ACR_BEARER_TOKEN.
+    An empty per-bucket variable does not fall back — that bucket needs its own token.
+    bucket_id_override limits the run to one bucket (custom sync form).
+    """
+    default_token = os.environ.get("ACR_BEARER_TOKEN", "").strip()
+    raw = os.environ.get("ACR_BUCKETS", "").strip()
+    targets = []
+    seen = set()
+
+    def add(bucket_id):
+        bucket_id = (bucket_id or "").strip()
+        if not bucket_id or bucket_id in seen:
+            return
+        seen.add(bucket_id)
+        env_key = f"ACR_BEARER_TOKEN_{bucket_id}"
+        if env_key in os.environ:
+            token = os.environ.get(env_key, "").strip()
+        else:
+            token = default_token
+        targets.append({"id": bucket_id, "token": token})
+
+    if raw:
+        for part in raw.split(","):
+            add(part)
+    else:
+        add(os.environ.get("ACR_BUCKET_ID", ""))
+
+    override = (bucket_id_override or "").strip() if bucket_id_override else ""
+    if not override:
+        return targets
+    match = next((t for t in targets if t["id"] == override), None)
+    if match:
+        return [match]
+    env_key = f"ACR_BEARER_TOKEN_{override}"
+    token = os.environ.get(env_key, "").strip() if env_key in os.environ else default_token
+    return [{"id": override, "token": token}]
+
+
+def _upload_file_to_acr(file_path: str, file_name: str, drive_file_id: str, bucket_id: str = "", bearer_token: str = ""):
+    """
+    Upload a single file to one ACR Cloud bucket.
+    bucket_id + bearer_token use Console API v2. With no bucket, fall back to legacy v1.
     """
     try:
         import requests
@@ -98,13 +141,17 @@ def _upload_file_to_acr(file_path: str, file_name: str, drive_file_id: str, buck
         logger.error("requests library is required for ACR upload. pip install requests")
         return False, "requests not installed", ""
 
-    bearer_token = os.environ.get("ACR_BEARER_TOKEN", "").strip()
-    bucket_id = (bucket_id_override or "").strip() or os.environ.get("ACR_BUCKET_ID", "").strip()
+    bucket_id = (bucket_id or "").strip()
+    bearer_token = (bearer_token or "").strip()
 
-    # Prefer Console API v2 (required for "Audio Fingerprinting" projects; Access Key is for identify only)
-    if bearer_token and bucket_id:
+    if bucket_id:
+        if not bearer_token:
+            return (
+                False,
+                f"No bearer token for bucket {bucket_id}. Set ACR_BEARER_TOKEN_{bucket_id} or ACR_BEARER_TOKEN.",
+                "",
+            )
         return _upload_file_to_acr_v2(file_path, file_name, bearer_token, bucket_id, requests)
-    # Fallback: legacy v1/audios (HMAC)
     return _upload_file_to_acr_v1(file_path, file_name, drive_file_id, requests)
 
 
@@ -197,7 +244,8 @@ def run_sync_drive_to_acr(from_date=None, to_date=None, bucket_id_override=None)
     Run the full sync pipeline (Drive -> download -> ACR -> record & cleanup).
     from_date / to_date: optional date filter (str YYYY-MM-DD or date). Only files with
     modifiedTime >= from_date and modifiedTime <= to_date are synced.
-    bucket_id_override: optional ACR bucket ID to use for this run instead of ACR_BUCKET_ID from env.
+    bucket_id_override: optional ACR bucket ID. When set, only that bucket is synced.
+    When omitted, every bucket in ACR_BUCKETS (or ACR_BUCKET_ID) is synced.
     Returns a summary dict.
     """
     try:
@@ -207,6 +255,17 @@ def run_sync_drive_to_acr(from_date=None, to_date=None, bucket_id_override=None)
     except ImportError as e:
         logger.exception("Google API libraries missing: %s", e)
         return _default_summary(e)
+
+    targets = _bucket_targets(bucket_id_override)
+    if not targets:
+        return _default_summary("No ACR buckets configured. Set ACR_BUCKETS or ACR_BUCKET_ID.")
+    for target in targets:
+        if not target["token"]:
+            logger.warning(
+                "No bearer token for bucket %s. Set ACR_BEARER_TOKEN_%s.",
+                target["id"],
+                target["id"],
+            )
 
     try:
         folder_id, creds_path = _get_drive_credentials()
@@ -220,8 +279,9 @@ def run_sync_drive_to_acr(from_date=None, to_date=None, bucket_id_override=None)
     )
     drive = build("drive", "v3", credentials=credentials, cache_discovery=False)
 
-    # ----- Phase A: List files in folder (trashed = false), optional date filter, exclude already synced -----
-    existing_ids = set(SyncedFile.objects.values_list("drive_file_id", flat=True))
+    # ----- Phase A: List files in folder (trashed = false), optional date filter -----
+    # A Drive file is pending when it has not yet been recorded for every target bucket.
+    existing_pairs = set(SyncedFile.objects.values_list("drive_file_id", "bucket_id"))
 
     query = f"'{folder_id}' in parents and trashed = false"
     if from_date:
@@ -259,22 +319,33 @@ def run_sync_drive_to_acr(from_date=None, to_date=None, bucket_id_override=None)
     except Exception as e:
         logger.exception("Drive list failed: %s", e)
         return _default_summary(e)
-    to_process = [f for f in files_in_folder if f["id"] not in existing_ids]
+    pending_by_file = []
+    for file_meta in files_in_folder:
+        pending = [t for t in targets if (file_meta["id"], t["id"]) not in existing_pairs]
+        if pending:
+            pending_by_file.append((file_meta, pending))
+    to_process = pending_by_file
 
     if not to_process:
         logger.info("No new Drive files to sync.")
         return {
             **_default_summary(),
             "message": "No new Drive files to sync.",
+            "bucket_ids": [t["id"] for t in targets],
             "files_in_folder": len(files_in_folder),
             "files_to_process": 0,
         }
 
-    logger.info("Sync started: %d new file(s) to process from Drive.", len(to_process))
+    bucket_ids = [t["id"] for t in targets]
+    logger.info(
+        "Sync started: %d file(s) to process from Drive for bucket(s) %s.",
+        len(to_process),
+        ", ".join(bucket_ids),
+    )
     DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    downloaded = []  # list of (drive_file_id, file_name, local_path)
+    downloaded = []  # list of (drive_file_id, file_name, local_path, pending_targets)
 
-    for file_meta in to_process:
+    for file_meta, pending in to_process:
         file_id = file_meta["id"]
         file_name = file_meta.get("name", "unknown")
         safe_name = "".join(c for c in file_name if c.isalnum() or c in "._- ") or file_id
@@ -291,18 +362,48 @@ def run_sync_drive_to_acr(from_date=None, to_date=None, bucket_id_override=None)
             logger.exception("Failed to download Drive file %s: %s", file_id, e)
             continue
         logger.info("Downloaded from Drive: %s (%s)", file_name, file_id)
-        downloaded.append((file_id, file_name, str(local_path)))
+        downloaded.append((file_id, file_name, str(local_path), pending))
 
-    # ----- Phase B & C: Upload to ACR, then create record and cleanup -----
+    # ----- Phase B & C: Upload to each pending bucket, then record & cleanup -----
     acr_success = 0
     acr_failed = 0
     last_acr_error = None
 
-    for drive_file_id, file_name, local_path in downloaded:
-        logger.info("Uploading to ACR: %s", file_name)
-        success, acr_status, acr_duration = _upload_file_to_acr(
-            local_path, file_name, drive_file_id, bucket_id_override=bucket_id_override
-        )
+    for drive_file_id, file_name, local_path, pending in downloaded:
+        file_ok = True
+        for target in pending:
+            logger.info("Uploading to ACR bucket %s: %s", target["id"], file_name)
+            success, acr_status, acr_duration = _upload_file_to_acr(
+                local_path,
+                file_name,
+                drive_file_id,
+                bucket_id=target["id"],
+                bearer_token=target["token"],
+            )
+            if success:
+                SyncedFile.objects.create(
+                    drive_file_id=drive_file_id,
+                    bucket_id=target["id"],
+                    file_name=file_name,
+                    acr_status=acr_status,
+                    acr_duration=acr_duration or "",
+                )
+                logger.info(
+                    "Synced successfully: %s (Drive ID: %s) -> bucket %s.",
+                    file_name,
+                    drive_file_id,
+                    target["id"],
+                )
+            else:
+                file_ok = False
+                last_acr_error = acr_status
+                logger.error(
+                    "ACR upload failed for %s (%s) bucket %s: %s; will retry on next run.",
+                    file_name,
+                    drive_file_id,
+                    target["id"],
+                    acr_status,
+                )
 
         try:
             if os.path.isfile(local_path):
@@ -310,24 +411,10 @@ def run_sync_drive_to_acr(from_date=None, to_date=None, bucket_id_override=None)
         except OSError as e:
             logger.warning("Could not remove local file %s: %s", local_path, e)
 
-        if success:
-            SyncedFile.objects.create(
-                drive_file_id=drive_file_id,
-                file_name=file_name,
-                acr_status=acr_status,
-                acr_duration=acr_duration or "",
-            )
+        if file_ok:
             acr_success += 1
-            logger.info("Synced successfully: %s (Drive ID: %s) -> ACR, record saved.", file_name, drive_file_id)
         else:
             acr_failed += 1
-            last_acr_error = acr_status
-            logger.error(
-                "ACR upload failed for %s (%s): %s; will retry on next run.",
-                file_name,
-                drive_file_id,
-                acr_status,
-            )
 
     logger.info(
         "Sync complete: %d file(s) synced successfully, %d failed.",
@@ -337,7 +424,8 @@ def run_sync_drive_to_acr(from_date=None, to_date=None, bucket_id_override=None)
     return {
         "success": True,
         "error": None,
-        "message": f"Processed {len(downloaded)} file(s).",
+        "message": f"Processed {len(downloaded)} file(s) for bucket(s) {', '.join(bucket_ids)}.",
+        "bucket_ids": bucket_ids,
         "files_in_folder": len(files_in_folder),
         "files_to_process": len(to_process),
         "downloaded": len(downloaded),
@@ -352,6 +440,7 @@ def sync_drive_to_acr(self, from_date=None, to_date=None, bucket_id_override=Non
     """
     Celery task: sync new files from Google Drive folder to ACR Cloud.
     Optional: from_date, to_date (str YYYY-MM-DD), bucket_id_override (str).
+    With no bucket_id_override, uploads go to every bucket in ACR_BUCKETS.
     """
     try:
         summary = run_sync_drive_to_acr(

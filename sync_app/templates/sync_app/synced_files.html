@@ -155,6 +155,7 @@
                     <thead>
                         <tr>
                             <th>File name</th>
+                            <th>Bucket</th>
                             <th>Drive ID</th>
                             <th>Duration</th>
                             <th>Synced at</th>
@@ -165,6 +166,7 @@
                         {% for f in files %}
                         <tr>
                             <td><span class="file-name" title="{{ f.file_name }}">{{ f.file_name }}</span></td>
+                            <td>{{ f.bucket_id|default:"—" }}</td>
                             <td><span class="drive-id" title="{{ f.drive_file_id }}">{{ f.drive_file_id }}</span></td>
                             <td class="duration">{{ f.duration_display|default:"—" }}</td>
                             <td class="synced-at">{{ f.synced_at|date:"M d, Y" }} {{ f.synced_at|time:"H:i" }}</td>
